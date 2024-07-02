@@ -10,53 +10,72 @@ views:
     icon: mdi:solar-power-variant
     badges: []
     cards:
-      - type: vertical-stack
+      - type: custom:stack-in-card
         cards:
-          - type: custom:bar-card
-            title: Status
+          - type: custom:power-flow-card-plus
             entities:
-              - entity: sensor.solis_pv_total_power
-                unit_of_measurement: W
-                target: '{{states(''sensor.solcast_forecast_today'')}}'
-                name: Solar
-                max: 5000
-                icon: mdi:solar-power-variant
-              - entity: sensor.solis_total_load
-                name: Load
-                max: 5000
-              - entity: sensor.solis_battery_soc
-                name: SOC
-                max: 100
-                icon: mdi:battery
-              - entity: sensor.solis_grid_import_power
-                name: Import Power
-                max: 5000
-                min: 0
-              - entity: sensor.solis_grid_export_power
-                name: Export Power
-                max: 5000
-                min: 0
-              - entity: sensor.solis_battery_output_energy
-                name: Battery Discharge
-                max: 5000
-                min: 0
-              - entity: sensor.solis_battery_input_energy
-                name: Battery Charge
-                max: 5000
-                min: 0
-          - type: entities
-            entities:
-              - type: custom:template-entity-row
-                name: Inverter Time
-                state: >-
-                  {{((as_local(as_datetime(states('sensor.solis_rtc'))))|string)[11:16]}}
-              - type: custom:template-entity-row
-                name: Time
-                state: >-
-                  {{(as_local(as_datetime(states('sensor.date_time_iso')))|string)[11:16]}}
-              - entity: button.solis_sync_rtc
+              battery:
+                entity: sensor.solis_battery_power
+                state_of_charge: sensor.solis_remaining_battery_capacity
+                state_of_charge_unit_white_space: false
+                show_state_of_charge: true
+                color_value: true
+                invert_state: true
+              grid:
+                color_value: true
+                entity: >-
+                  sensor.octopus_energy_electricity_18l2077993_1900013281497_current_demand
+                invert_state: false
+              solar:
+                entity: sensor.solis_ac_output_total_power
+                display_zero_state: true
+                color_value: false
+                invert_state: false
+              fossil_fuel_percentage:
+                icon: mdi:leaf
+                display_zero_state: false
+                color_icon: false
+                color_value: false
+                display_zero: true
+                entity: sensor.electricity_maps_co2_intensity
+                secondary_info:
+                  entity: sensor.non_fossil_fuel_percentage
+                  unit_of_measurement: '%'
+                name: Low Carbon
+              home:
+                entity: sensor.solis_total_consumption_power
+                override_state: true
+                subtract_individual: false
+            clickable_entities: true
+            display_zero_lines:
+              mode: show
+              transparency: 50
+              grey_color:
+                - 189
+                - 189
+                - 189
+            use_new_flow_rate_model: true
+            w_decimals: 0
+            min_flow_rate: 0.75
+            max_flow_rate: 6
+            max_expected_power: 4000
+            min_expected_power: 0.01
+            watt_threshold: 1000
+            transparency_zero_lines: 0
+            disable_dots: false
+            kw_decimals: 2
           - type: markdown
             content: >
+              <table width="100%"> <tr> <th valign='top'
+              align='left'>Status</th> <td>{{ states('sensor.pvopt_status')
+              }}</br><i>{{ state_attr('sensor.pvopt_status', 'last_updated') |
+              as_datetime | relative_time }} ago</i></td> </tr> <tr> <th
+              align='left'>Last Run Duration</th> <td>{{
+              states('sensor.pvopt_optimiser_elapsed') }} s</td> </tr> <tr> <th
+              align='left'>Inverter Info</th> <td>{{
+              states('sensor.solis_timestamp_measurements_received') |
+              as_datetime | relative_time }} ago</td> </tr> </table>
+
               <h3><u>Cost Summary (GBP)</u></h3>
 
 
@@ -107,21 +126,416 @@ views:
               <h3><u>Charge Plan</u></h3>
 
 
-              | Start | | | End ||| Power ||| Start SOC ||| End SOC | Hold SOC
-              | 
+              | Duration ||| Power ||| SOC | Hold SOC | 
 
-              |:-------|--|--|:---------|--|--|:--------:|--|--|:--------:|--|--|:----------:|:--|{%
-              for a in state_attr('sensor.pvopt_charge_start', 'windows') %}
+              |:----------------|--|--|:--------:|--|--|:--------:|:--|{% for a
+              in state_attr('sensor.pvopt_charge_start', 'windows') %}
 
-              {% set tf = '%d-%b %H:%M %Z'%} | 
-              {{as_local(as_datetime(a['start'])).strftime(tf)}}    |||
-              {{as_local(as_datetime(a['end'])).strftime(tf)}} ||| {{a['forced']
-              | float | round(0)}}W ||| {{a['soc'] | float | round(1)}}% |||
-              {{a['soc_end'] | float | round(1)}}% | {{a['hold_soc']}}
-              |{%endfor%}
+              {% set tf = '%d-%b %H:%M'%} {% set end_tf = '%H:%M %Z' %} | 
+              {{as_local(as_datetime(a['start'])).strftime(tf)}} ->
+              {{as_local(as_datetime(a['end'])).strftime(end_tf)}} ||| {{
+              float(a['forced'] / 48.0) | round(method='floor')}} A |||
+              {{a['soc'] | float | round(1)}}% -> {{a['soc_end'] | float |
+              round(1)}}% | {{a['hold_soc']}} |{%endfor%}
             title: PV Opt Results
       - type: custom:stack-in-card
-        title: Optimised Charging
+        cards:
+          - type: vertical-stack
+            cards:
+              - type: markdown
+                content: Results
+              - type: entities
+                entities:
+                  - entity: sensor.solis_remaining_battery_capacity
+                    name: Current Battery SOC
+                  - type: custom:template-entity-row
+                    name: Next Charge/Discharge Slot Start
+                    state: >-
+                      {{(as_local(as_datetime(states('sensor.pvopt_charge_start')))|string)[:16]}}
+                    icon: mdi:timer-sand-complete
+                  - type: custom:template-entity-row
+                    name: Next Charge/Discharge Slot End
+                    state: >-
+                      {{(as_local(as_datetime(states('sensor.pvopt_charge_end')))|string)[:16]}}
+                    icon: mdi:timer-sand-complete
+                  - entity: sensor.pvopt_charge_current
+                    name: Optimum Charge Current
+                  - entity: sensor.solis_battery_current
+                    name: Battery Current
+                state_color: true
+            show_header_toggle: false
+          - type: custom:apexcharts-card
+            apex_config:
+              chart:
+                height: 234px
+            yaxis:
+              - id: power
+                show: true
+                decimals: 0
+                apex_config:
+                  forceNiceScale: true
+            header:
+              show: true
+              show_states: true
+              colorize_states: true
+              title: Solar Forecasts vs Actual
+            stacked: false
+            graph_span: 3d
+            span:
+              start: day
+              offset: '-1day'
+            series:
+              - entity: sensor.solis_total_consumption_power
+                name: Consumption
+                float_precision: 0
+                extend_to: now
+                group_by:
+                  func: avg
+                  duration: 30min
+              - entity: sensor.solis_dc_power_combined
+                float_precision: 0
+                extend_to: now
+                name: Production
+                stroke_width: 1
+                type: column
+                color: '#ff7f00'
+                group_by:
+                  func: avg
+                  duration: 30min
+                offset: +15min
+                show:
+                  name_in_header: true
+                  in_header: true
+                  in_chart: true
+                  legend_value: true
+                  offset_in_name: false
+              - entity: sensor.pvopt_opt_cost
+                type: line
+                name: Forecast Consumption
+                color: yellow
+                opacity: 0.7
+                stroke_width: 2
+                offset: +15min
+                show:
+                  in_header: false
+                  legend_value: false
+                data_generator: |
+                  return entity.attributes.consumption.map((entry) => {
+                     return [new Date(entry.period_start), entry.consumption];
+                   });    
+              - entity: sensor.solcast_pv_forecast_forecast_today
+                type: area
+                name: Solcast Today 90%
+                color: cyan
+                opacity: 0.1
+                stroke_width: 0
+                unit: W
+                show:
+                  in_header: false
+                  legend_value: false
+                  offset_in_name: false
+                data_generator: |
+                  return entity.attributes.detailedForecast.map((entry) => {
+                     return [new Date(entry.period_start), entry.pv_estimate90*1000];
+                   });
+                offset: +15min
+              - entity: sensor.solcast_pv_forecast_forecast_today
+                type: area
+                name: Solcast Today 10%
+                color: '#1c1c1c'
+                opacity: 1
+                stroke_width: 0
+                unit: W
+                show:
+                  in_header: false
+                  legend_value: false
+                  offset_in_name: false
+                data_generator: |
+                  return entity.attributes.detailedForecast.map((entry) => {
+                     return [new Date(entry.period_start), entry.pv_estimate10*1000];
+                   });
+                offset: +15min
+              - entity: sensor.solcast_pv_forecast_forecast_today
+                type: line
+                name: Solcast Today
+                color: cyan
+                opacity: 1
+                stroke_width: 3
+                unit: W
+                show:
+                  in_header: false
+                  legend_value: false
+                  offset_in_name: false
+                data_generator: |
+                  return entity.attributes.detailedForecast.map((entry) => {
+                     return [new Date(entry.period_start), entry.pv_estimate*1000];
+                   });
+                offset: +15min
+              - entity: sensor.solcast_pv_forecast_forecast_tomorrow
+                type: area
+                name: Solcast Tomorrow 90%
+                color: cyan
+                opacity: 0.1
+                stroke_width: 0
+                unit: W
+                show:
+                  in_header: false
+                  legend_value: false
+                  offset_in_name: false
+                data_generator: |
+                  return entity.attributes.detailedForecast.map((entry) => {
+                     return [new Date(entry.period_start), entry.pv_estimate90*1000];
+                   });
+                offset: +15min
+              - entity: sensor.solcast_pv_forecast_forecast_tomorrow
+                type: area
+                name: Solcast Tomorrow 10%
+                color: '#1c1c1c'
+                opacity: 1
+                stroke_width: 0
+                unit: W
+                show:
+                  in_header: false
+                  offset_in_name: false
+                  legend_value: false
+                data_generator: |
+                  return entity.attributes.detailedForecast.map((entry) => {
+                     return [new Date(entry.period_start), entry.pv_estimate10*1000];
+                   });
+                offset: +15min
+              - entity: sensor.solcast_pv_forecast_forecast_tomorrow
+                type: line
+                name: Solcast Tomorrow
+                color: cyan
+                opacity: 1
+                stroke_width: 3
+                unit: W
+                show:
+                  in_header: false
+                  legend_value: false
+                  offset_in_name: false
+                data_generator: |
+                  return entity.attributes.detailedForecast.map((entry) => {
+                     return [new Date(entry.period_start), entry.pv_estimate*1000];
+                   });
+                offset: +15min
+          - type: custom:apexcharts-card
+            apex_config:
+              chart:
+                height: 234px
+            yaxis:
+              - id: soc
+                show: true
+                min: 0
+                max: 100
+                decimals: 0
+                apex_config:
+                  tickAmount: 5
+            header:
+              show: true
+              show_states: true
+              colorize_states: true
+              title: Battery SOC Forecast vs Actual
+            graph_span: 3d
+            span:
+              start: day
+              offset: '-1day'
+            series:
+              - entity: sensor.solis_remaining_battery_capacity
+                extend_to: now
+                name: Actual
+                stroke_width: 1
+                type: area
+                color: '#ff7f00'
+                opacity: 0.4
+                yaxis_id: soc
+              - entity: sensor.pvopt_opt_cost
+                type: line
+                name: Optimised
+                color: '#7f7fff'
+                opacity: 0.7
+                stroke_width: 2
+                unit: '%'
+                show:
+                  in_header: false
+                  legend_value: false
+                data_generator: |
+                  return entity.attributes.soc.map((entry) => {
+                     return [new Date(entry.period_start), entry.soc];
+                   });
+                yaxis_id: soc
+              - entity: sensor.pvopt_base_cost
+                type: line
+                name: Initial
+                color: '#7fff7f'
+                opacity: 0.7
+                stroke_width: 2
+                unit: '%'
+                show:
+                  in_header: false
+                  legend_value: false
+                data_generator: |
+                  return entity.attributes.soc.map((entry) => {
+                     return [new Date(entry.period_start), entry.soc];
+                   });
+                yaxis_id: soc
+          - type: custom:apexcharts-card
+            apex_config:
+              chart:
+                height: 230px
+            header:
+              show: true
+              show_states: true
+              colorize_states: true
+              title: Pricing and Forced Charge/Discharge
+            graph_span: 2d
+            yaxis:
+              - id: price
+                decimals: 0
+                min: -10
+                max: 70
+                apex_config:
+                  tickAmount: 8
+              - id: charge
+                decimals: 0
+                opposite: true
+                show: true
+                min: -4000
+                max: 4000
+                apex_config:
+                  tickAmount: 8
+            stacked: false
+            span:
+              start: day
+            series:
+              - entity: sensor.pvopt_opt_cost
+                type: column
+                name: Forced Charge
+                yaxis_id: charge
+                color: orange
+                opacity: 0.7
+                stroke_width: 2
+                unit: W
+                offset: '-15min'
+                show:
+                  in_header: false
+                  legend_value: false
+                  offset_in_name: false
+                data_generator: |
+                  return entity.attributes.forced.map((entry) => {
+                     return [new Date(entry.period_start), entry.forced];
+                   });
+              - entity: >-
+                  event.octopus_energy_electricity_18l2077993_1900013281497_current_day_rates
+                yaxis_id: price
+                name: Historic Import Price
+                color: yellow
+                opacity: 1
+                stroke_width: 3
+                extend_to: now
+                unit: p/kWh
+                data_generator: |
+                  return entity.attributes.rates.map((entry) => {
+                     return [new Date(entry.start), entry.value_inc_vat*100];
+                   });     
+                offset: '-15min'
+                show:
+                  in_header: false
+                  legend_value: false
+                  offset_in_name: false
+              - entity: >-
+                  event.octopus_energy_electricity_18l2077993_1900092609322_export_current_day_rates
+                yaxis_id: price
+                name: Historic Export Price
+                color: cyan
+                opacity: 1
+                stroke_width: 3
+                extend_to: now
+                unit: p/kWh
+                data_generator: |
+                  return entity.attributes.rates.map((entry) => {
+                     return [new Date(entry.start), entry.value_inc_vat*100];
+                   });     
+                offset: '-15min'
+                show:
+                  in_header: false
+                  legend_value: false
+                  offset_in_name: false
+              - entity: sensor.pvopt_opt_cost
+                type: line
+                name: Future Avg Import Price
+                float_precision: 1
+                color: white
+                opacity: 1
+                stroke_width: 3
+                extend_to: now
+                unit: p/kWh
+                offset: '-15min'
+                show:
+                  in_header: true
+                  legend_value: false
+                  offset_in_name: false
+                data_generator: |
+                  return entity.attributes.import.map((entry) => {
+                     return [new Date(entry.period_start), entry.import];
+                   });
+                yaxis_id: price
+              - entity: sensor.pvopt_opt_cost
+                float_precision: 1
+                type: line
+                name: Future Avg Export Price
+                color: green
+                opacity: 1
+                stroke_width: 3
+                extend_to: now
+                unit: p/kWh
+                offset: '-15min'
+                show:
+                  in_header: true
+                  legend_value: false
+                  offset_in_name: false
+                data_generator: |
+                  return entity.attributes.export.map((entry) => {
+                     return [new Date(entry.period_start), entry.export];
+                   });
+                yaxis_id: price
+      - type: custom:stack-in-card
+        cards:
+          - type: custom:octopus-energy-rates-card
+            currentEntity: >-
+              event.octopus_energy_electricity_18l2077993_1900013281497_current_day_rates
+            cols: 2
+            hour12: false
+            showday: true
+            showpast: false
+            title: Octopus Agile Import (Today)
+            unitstr: p
+            lowlimit: 15
+            mediumlimit: 20
+            highlimit: 30
+            roundUnits: 2
+            cheapest: true
+            multiplier: 100
+          - type: custom:octopus-energy-rates-card
+            currentEntity: >-
+              event.octopus_energy_electricity_18l2077993_1900013281497_next_day_rates
+            cols: 2
+            hour12: false
+            showday: true
+            showpast: false
+            title: Octopus Agile Import (Tomorrow)
+            unitstr: p
+            lowlimit: 15
+            mediumlimit: 20
+            highlimit: 30
+            roundUnits: 2
+            cheapest: true
+            multiplier: 100
+  - title: Configuration
+    path: configuration
+    cards:
+      - type: custom:stack-in-card
+        title: Configuration
         cards:
           - type: entities
             entities:
@@ -239,7 +653,7 @@ views:
               - entity: number.pvopt_charger_efficiency_percent
                 name: Charger Efficiency
               - entity: number.pvopt_battery_current_limit_amps
-                name: Battery Current Limit                
+                name: Battery Current Limit
           - type: markdown
             content: Tuning Parameters
           - type: entities
@@ -254,422 +668,4 @@ views:
                 name: Threshold per slot (p)
               - entity: number.pvopt_forced_power_group_tolerance
                 name: Power Resolution
-      - type: custom:stack-in-card
-        cards:
-          - type: vertical-stack
-            cards:
-              - type: markdown
-                content: Results
-              - type: entities
-                entities:
-                  - entity: sensor.solis_battery_soc
-                    name: Current Battery SOC
-                  - type: custom:template-entity-row
-                    name: Next Charge/Discharge Slot Start
-                    state: >-
-                      {{(as_local(as_datetime(states('sensor.pvopt_charge_start')))|string)[:16]}}
-                    icon: mdi:timer-sand-complete
-                  - type: custom:template-entity-row
-                    name: Next Charge/Discharge Slot End
-                    state: >-
-                      {{(as_local(as_datetime(states('sensor.pvopt_charge_end')))|string)[:16]}}
-                    icon: mdi:timer-sand-complete
-                  - entity: sensor.pvopt_charge_current
-                    name: Optimum Charge Current
-                  - entity: sensor.solis_battery_current
-                    name: Battery Current
-                state_color: true
-            show_header_toggle: false
-          - type: custom:apexcharts-card
-            apex_config:
-              chart:
-                height: 234px
-            yaxis:
-              - id: power
-                show: true
-                decimals: 0
-                apex_config:
-                  forceNiceScale: true
-            header:
-              show: true
-              show_states: true
-              colorize_states: true
-              title: Solar Forecasts vs Actual
-            graph_span: 2d
-            stacked: false
-            span:
-              start: day
-            series:
-              - entity: sensor.solis_total_load
-                float_precision: 0
-                extend_to: now
-                group_by:
-                  func: avg
-                  duration: 30min
-              - entity: sensor.solis_pv_total_power
-                float_precision: 0
-                extend_to: now
-                name: Actual
-                stroke_width: 1
-                type: column
-                color: '#ff7f00'
-                group_by:
-                  func: avg
-                  duration: 30min
-                offset: +15min
-                show:
-                  name_in_header: true
-                  in_header: true
-                  in_chart: true
-                  legend_value: true
-                  offset_in_name: false
-              - entity: sensor.pvopt_opt_cost
-                type: line
-                name: Forecast Consumption
-                color: yellow
-                opacity: 0.7
-                stroke_width: 2
-                offset: +15min
-                show:
-                  in_header: false
-                  legend_value: false
-                data_generator: |
-                  return entity.attributes.consumption.map((entry) => {
-                     return [new Date(entry.period_start), entry.consumption];
-                   });    
-              - entity: sensor.solcast_pv_forecast_forecast_today
-                type: area
-                name: ''
-                color: cyan
-                opacity: 0.1
-                stroke_width: 0
-                unit: W
-                show:
-                  in_header: false
-                  legend_value: false
-                  offset_in_name: false
-                data_generator: |
-                  return entity.attributes.detailedForecast.map((entry) => {
-                     return [new Date(entry.period_start), entry.pv_estimate90*1000];
-                   });
-                offset: +15min
-              - entity: sensor.solcast_pv_forecast_forecast_today
-                type: area
-                name: ' '
-                color: '#1c1c1c'
-                opacity: 1
-                stroke_width: 0
-                unit: W
-                show:
-                  in_header: false
-                  legend_value: false
-                  offset_in_name: false
-                data_generator: |
-                  return entity.attributes.detailedForecast.map((entry) => {
-                     return [new Date(entry.period_start), entry.pv_estimate10*1000];
-                   });
-                offset: +15min
-              - entity: sensor.solcast_pv_forecast_forecast_today
-                type: line
-                name: Solcast
-                color: cyan
-                opacity: 1
-                stroke_width: 3
-                unit: W
-                show:
-                  in_header: false
-                  legend_value: false
-                  offset_in_name: false
-                data_generator: |
-                  return entity.attributes.detailedForecast.map((entry) => {
-                     return [new Date(entry.period_start), entry.pv_estimate*1000];
-                   });
-                offset: +15min
-              - entity: sensor.solcast_pv_forecast_forecast_tomorrow
-                type: area
-                name: Solcast
-                color: cyan
-                opacity: 0.1
-                stroke_width: 0
-                unit: W
-                show:
-                  in_header: false
-                  legend_value: false
-                  offset_in_name: false
-                data_generator: |
-                  return entity.attributes.detailedForecast.map((entry) => {
-                     return [new Date(entry.period_start), entry.pv_estimate90*1000];
-                   });
-                offset: +15min
-              - entity: sensor.solcast_pv_forecast_forecast_tomorrow
-                type: area
-                name: Solcast
-                color: '#1c1c1c'
-                opacity: 1
-                stroke_width: 0
-                unit: W
-                show:
-                  in_header: false
-                  offset_in_name: false
-                  legend_value: false
-                data_generator: |
-                  return entity.attributes.detailedForecast.map((entry) => {
-                     return [new Date(entry.period_start), entry.pv_estimate10*1000];
-                   });
-                offset: +15min
-              - entity: sensor.solcast_pv_forecast_forecast_tomorrow
-                type: line
-                name: Solcast
-                color: cyan
-                opacity: 1
-                stroke_width: 3
-                unit: W
-                show:
-                  in_header: false
-                  legend_value: false
-                  offset_in_name: false
-                data_generator: |
-                  return entity.attributes.detailedForecast.map((entry) => {
-                     return [new Date(entry.period_start), entry.pv_estimate*1000];
-                   });
-                offset: +15min
-          - type: custom:apexcharts-card
-            apex_config:
-              chart:
-                height: 234px
-            yaxis:
-              - id: soc
-                show: true
-                min: 0
-                max: 100
-                decimals: 0
-                apex_config:
-                  tickAmount: 5
-            header:
-              show: true
-              show_states: true
-              colorize_states: true
-              title: Battery SOC Forecast vs Actual
-            graph_span: 2d
-            span:
-              start: day
-            series:
-              - entity: sensor.solis_battery_soc
-                extend_to: now
-                name: Actual
-                stroke_width: 1
-                type: area
-                color: '#ff7f00'
-                opacity: 0.4
-                yaxis_id: soc
-              - entity: sensor.pvopt_opt_cost
-                type: line
-                name: Optimised
-                color: '#7f7fff'
-                opacity: 0.7
-                stroke_width: 2
-                unit: '%'
-                show:
-                  in_header: false
-                  legend_value: false
-                data_generator: |
-                  return entity.attributes.soc.map((entry) => {
-                     return [new Date(entry.period_start), entry.soc];
-                   });
-                yaxis_id: soc
-              - entity: sensor.pvopt_base_cost
-                type: line
-                name: Initial
-                color: '#7fff7f'
-                opacity: 0.7
-                stroke_width: 2
-                unit: '%'
-                show:
-                  in_header: false
-                  legend_value: false
-                data_generator: |
-                  return entity.attributes.soc.map((entry) => {
-                     return [new Date(entry.period_start), entry.soc];
-                   });
-                yaxis_id: soc
-          - type: custom:apexcharts-card
-            apex_config:
-              chart:
-                height: 230px
-            header:
-              show: true
-              show_states: true
-              colorize_states: true
-              title: Pricing and Forced Charge/Discharge
-            graph_span: 2d
-            yaxis:
-              - id: price
-                decimals: 0
-                min: -10
-                max: 70
-                apex_config:
-                  tickAmount: 8
-              - id: charge
-                decimals: 0
-                opposite: true
-                show: true
-                min: -4000
-                max: 4000
-                apex_config:
-                  tickAmount: 8
-            stacked: false
-            span:
-              start: day
-            series:
-              - entity: sensor.pvopt_opt_cost
-                type: column
-                name: Forced Charge
-                yaxis_id: charge
-                color: orange
-                opacity: 0.7
-                stroke_width: 2
-                unit: W
-                offset: '-15min'
-                show:
-                  in_header: false
-                  legend_value: false
-                  offset_in_name: false
-                data_generator: |
-                  return entity.attributes.forced.map((entry) => {
-                     return [new Date(entry.period_start), entry.forced];
-                   });
-              - entity: >-
-                  event.octopus_energy_electricity_19m1337498_1610032016836_current_day_rates
-                yaxis_id: price
-                name: Historic Import Price
-                color: yellow
-                opacity: 1
-                stroke_width: 3
-                extend_to: now
-                unit: p/kWh
-                data_generator: |
-                  return entity.attributes.rates.map((entry) => {
-                     return [new Date(entry.start), entry.value_inc_vat*100];
-                   });     
-                offset: '-15min'
-                show:
-                  in_header: false
-                  legend_value: false
-                  offset_in_name: false
-              - entity: >-
-                  event.octopus_energy_electricity_19m1337498_1650000216929_export_current_day_rates
-                yaxis_id: price
-                name: Historic Export Price
-                color: cyan
-                opacity: 1
-                stroke_width: 3
-                extend_to: now
-                unit: p/kWh
-                data_generator: |
-                  return entity.attributes.rates.map((entry) => {
-                     return [new Date(entry.start), entry.value_inc_vat*100];
-                   });     
-                offset: '-15min'
-                show:
-                  in_header: false
-                  legend_value: false
-                  offset_in_name: false
-              - entity: sensor.pvopt_opt_cost
-                type: line
-                name: Future Import Price
-                float_precision: 1
-                color: white
-                opacity: 1
-                stroke_width: 3
-                extend_to: now
-                unit: p/kWh
-                offset: '-15min'
-                show:
-                  in_header: true
-                  legend_value: false
-                  offset_in_name: false
-                data_generator: |
-                  return entity.attributes.import.map((entry) => {
-                     return [new Date(entry.period_start), entry.import];
-                   });
-                yaxis_id: price
-              - entity: sensor.pvopt_opt_cost
-                float_precision: 1
-                type: line
-                name: Future Export Price
-                color: green
-                opacity: 1
-                stroke_width: 3
-                extend_to: now
-                unit: p/kWh
-                offset: '-15min'
-                show:
-                  in_header: true
-                  legend_value: false
-                  offset_in_name: false
-                data_generator: |
-                  return entity.attributes.export.map((entry) => {
-                     return [new Date(entry.period_start), entry.export];
-                   });
-                yaxis_id: price
-      - type: custom:octopus-energy-rates-card
-        currentEntity: >-
-          event.octopus_energy_electricity_19m1337498_1610032016836_current_day_rates
-        futureEntity: >-
-          event.octopus_energy_electricity_19m1337498_1610032016836_next_day_rates
-        cols: 2
-        hour12: false
-        showday: true
-        showpast: false
-        title: Octopus Import
-        unitstr: p
-        lowlimit: 15
-        mediumlimit: 20
-        highlimit: 30
-        roundUnits: 2
-        cheapest: true
-        multiplier: 100
-      - type: custom:stack-in-card
-        cards:
-          - type: custom:apexcharts-card
-            apex_config:
-              chart:
-                height: 234px
-            header:
-              show: true
-              show_states: true
-              colorize_states: true
-              title: Optimised Daily Cost
-            graph_span: 7d
-            span:
-              start: day
-              offset: '-6d'
-            series:
-              - entity: sensor.pvopt_opt_cost_actual
-                name: Actual
-                extend_to: false
-                curve: stepline
-                float_precision: 2
-                show:
-                  legend_value: false
-              - entity: sensor.pvopt_opt_cost_current
-                name: Current Contract
-                curve: stepline
-                float_precision: 2
-                extend_to: false
-                show:
-                  legend_value: false
-              - entity: sensor.pvopt_opt_cost_eco7_fix
-                name: Eco7 / Fix
-                curve: stepline
-                float_precision: 2
-                extend_to: false
-                show:
-                  legend_value: false
-              - entity: sensor.pvopt_opt_cost_flux
-                curve: stepline
-                name: Flux
-                float_precision: 2
-                show:
-                  legend_value: false
-                extend_to: false
+    icon: mdi:note-edit
